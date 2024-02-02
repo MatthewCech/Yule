@@ -31,12 +31,13 @@ int main()
   ParticleSystem<ParticleData> particleSystem = ParticleSystem<ParticleData>(100, 0.015, true, data, CreateParticle, UpdateParticle);
   ParticleSystem<ParticleData>* scrapeSys = nullptr;
   InputParser parser = InputParser();
-
+  
   // Console config/setup
   windowWidth = CONSOLE_WIDTH;
   windowHeight = CONSOLE_HEIGHT;
   RConsole::Canvas::ReInit(windowWidth, windowHeight);
   RConsole::Canvas::SetCursorVisible(false);
+  RConsole::Canvas::FillCanvas();
 
   while (true)
   {
@@ -50,43 +51,13 @@ int main()
     parser.HandleInput(ProcessInputChar, ProcessInputString);
     particleSystem.Update(lastFrameS);
     RConsole::Canvas::Update();
-
-    if (pendingScrapeData)
-    {
-      if (scrapeSys != nullptr)
-      {
-        delete scrapeSys;
-      }
-
-      scrapeSys = new ParticleSystem<ParticleData>(sizeof(scraped), 0.003, false, data, CreateFileParticle, UpdateParticle);
-      for (int i = 0; i < sizeof(scraped); ++i)
-      {
-        char entry = scraped[i];
-
-        // Prevent bell
-        if (entry == static_cast<unsigned char>(7))
-        {
-          entry = '?';
-        }
-
-        pendingBurnStack.push(entry);
-      }
-
-      pendingScrapeData = false;
-    }
-    
-    if (scrapeSys != nullptr)
-    {
-      scrapeSys->Update(lastFrameS);
-    }
+    HandlePendingScrapedData(scrapeSys, data, lastFrameS);
+    TryUpdate(scrapeSys, lastFrameS);
 
     // Draw
     DrawBackgroundLog();
     DrawParticles(particleSystem);
-    if (scrapeSys != nullptr)
-    {
-      DrawParticles(*scrapeSys);
-    }
+    DrawParticles(scrapeSys);
     DrawForegroundLog();
     DrawFrameTime(displayFrameTime);
     DrawColorDisplay(displayColors);
@@ -103,6 +74,65 @@ int main()
 }
 
 /// <summary>
+/// Wrap to cover null system updates
+/// </summary>
+/// <param name="particle_system"></param>
+/// <param name="dt"></param>
+void TryUpdate(ParticleSystem<ParticleData>* particle_system, const double& dt)
+{
+  if (particle_system != nullptr)
+  {
+    TryUpdate(*particle_system, dt);
+  }
+}
+
+/// <summary>
+/// Wraps update call to more easily wrangle later if needed
+/// </summary>
+/// <param name="particle_system"></param>
+/// <param name="dt"></param>
+void TryUpdate(ParticleSystem<ParticleData>& particle_system, const double& dt)
+{
+  particle_system.Update(dt);
+}
+
+/// <summary>
+/// Gross but extracted method to wrangle pushing characters into the pending particle stack
+/// </summary>
+/// <param name="scrapeSys"></param>
+/// <param name="data"></param>
+/// <param name="lastFrameS"></param>
+void HandlePendingScrapedData(ParticleSystem<ParticleData>*& scrapeSys, ParticleData& data, const double& dt)
+{
+  if (!pendingScrapeData)
+  {
+    return;
+  }
+
+  if (scrapeSys != nullptr)
+  {
+    RConsole::Canvas::FillCanvas();
+    delete scrapeSys;
+  }
+
+  scrapeSys = new ParticleSystem<ParticleData>(sizeof(scraped), 0.003, false, data, CreateFileParticle, UpdateParticle);
+  for (int i = 0; i < sizeof(scraped); ++i)
+  {
+    char entry = scraped[i];
+
+    // Prevent bell
+    if (entry == static_cast<unsigned char>(7))
+    {
+      entry = '?';
+    }
+
+    pendingBurnStack.push(entry);
+  }
+
+  pendingScrapeData = false;
+}
+
+/// <summary>
 /// Given a system, goes through and draws the particle, extracting the visual from the data.
 /// </summary>
 /// <param name="particle_system"></param>
@@ -111,7 +141,19 @@ void DrawParticles(ParticleSystem<ParticleData>& particle_system)
   std::list<Particle<ParticleData>> particles = particle_system.Particles();
   for (Particle<ParticleData>& p : particles)
   {
-    RConsole::Canvas::Draw(p.Data.visual, static_cast<float>(p.PosX), p.PosY, DetermineColor(p));
+    RConsole::Canvas::Draw(p.Data.visual, static_cast<float>(p.PosX), static_cast<float>(p.PosY), DetermineColor(p));
+  }
+}
+
+/// <summary>
+/// Given a system, goes through and draws the particle, extracting the visual from the data.
+/// </summary>
+/// <param name="particle_system"></param>
+void DrawParticles(ParticleSystem<ParticleData>* particle_system)
+{
+  if (particle_system != nullptr)
+  {
+    DrawParticles(*particle_system);
   }
 }
 
@@ -128,6 +170,7 @@ void DrawFrameTime(bool is_displaying)
 
   std::string composedFPS = std::to_string(lastFrameMicroseconds / 1000) + "." + std::to_string(lastFrameMicroseconds % 1000) + "ms";
   RConsole::Canvas::DrawString(composedFPS.c_str(), 0, 0, RConsole::DARKGREY);
+  RConsole::Canvas::DrawString("(toggle with d or f)", 0, 1, RConsole::DARKGREY);
 }
 
 /// <summary>
@@ -169,18 +212,19 @@ void DrawColorDisplay(bool is_displaying)
     "White"
   };
 
+  const int horizontalOffset = 1;
+  const int verticalOffset = 2;
+
   for (int row = 0; row < static_cast<int>(RConsole::Color::PREVIOUS_COLOR); ++row)
   {
-
     for (int col = 0; col < sizeof(testAscii); ++col)
     {
-      const int horizontalOffset = 1;
-      const int verticalOffset = 0;
-
       RConsole::Canvas::Draw(testAscii[col], col + horizontalOffset, row + verticalOffset, static_cast<RConsole::Color>(row));
-      RConsole::Canvas::DrawString(colorStrings[row].c_str(), sizeof(testAscii) + 1, row, static_cast<RConsole::Color>(row));
+      RConsole::Canvas::DrawString(colorStrings[row].c_str(), sizeof(testAscii) + 1, row + verticalOffset, static_cast<RConsole::Color>(row));
     }
   }
+
+  RConsole::Canvas::DrawString("(toggle with c)", horizontalOffset, verticalOffset + static_cast<int>(RConsole::Color::PREVIOUS_COLOR), RConsole::DARKGREY);
 }
 
 /// <summary>
@@ -232,8 +276,8 @@ void ProcessInputChar(char key)
 /// </summary>
 void ResizeIfNeeded()
 {
-  int windowFrameWidth = CONSOLE_WIDTH;
-  int windowFrameHeight = CONSOLE_HEIGHT;
+  const int windowFrameWidth = CONSOLE_WIDTH;
+  const int windowFrameHeight = CONSOLE_HEIGHT;
 
   if (windowWidth != windowFrameWidth || windowHeight != windowFrameHeight)
   {
@@ -258,7 +302,7 @@ void CreateParticle(Particle<ParticleData>& p)
   p.PosX = windowWidth / 2 + (rand() % 8 - 4);
   p.PosY = windowHeight - 3;
 
-  double rand0to30 = (rand() % 30000 / 1000.0);
+  const double rand0to30 = (rand() % 30000 / 1000.0);
   p.Life = 2 - log10(rand0to30 + .001);
 
   p.Data.startLife = p.Life;
@@ -277,6 +321,10 @@ void CreateParticle(Particle<ParticleData>& p)
   p.Data.visual = charset[rand() % 6];
 }
 
+/// <summary>
+/// An effect designed to look like throwing a piece of cardboard or paper into a fire - a 'fwoosh' if you will.
+/// </summary>
+/// <param name="p"></param>
 void CreateFileParticle(Particle<ParticleData>& p)
 {
   p.VelX = (rand() % 1000 / 1000.0 - 0.5) * 20;
@@ -284,7 +332,7 @@ void CreateFileParticle(Particle<ParticleData>& p)
   p.PosX = windowWidth / 2 + (rand() % 8 - 4);
   p.PosY = windowHeight - 1;
 
-  double rand0to30 = (rand() % 30000 / 1000.0);
+  const double rand0to30 = (rand() % 30000 / 1000.0);
   p.Life = 2.5 - log10(rand0to30 + .001);
 
   p.Data.startLife = p.Life;
@@ -301,6 +349,11 @@ void UpdateParticle(double dt, Particle<ParticleData>& p)
   p.VelY -= 5 * dt;
 }
 
+/// <summary>
+/// Correlate a particle color to a given 
+/// </summary>
+/// <param name="p"></param>
+/// <returns></returns>
 RConsole::Color DetermineColor(Particle<ParticleData> p)
 {
   double t = p.Life / p.Data.startLife;

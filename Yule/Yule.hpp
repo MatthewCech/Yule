@@ -30,7 +30,13 @@ void ProcessInputChar(char key);
 void ProcessInputString(std::string path);
 void ResizeIfNeeded();
 
+void TryUpdate(ParticleSystem<ParticleData>* particle_system, const double& dt);
+void TryUpdate(ParticleSystem<ParticleData>& particle_system, const double& dt);
+
 void DrawParticles(ParticleSystem<ParticleData>& particle_system);
+void DrawParticles(ParticleSystem<ParticleData>* particle_system);
+
+void HandlePendingScrapedData(ParticleSystem<ParticleData>*& scrapeSys, ParticleData& data, const double& lastFrameS);
 RConsole::Color DetermineColor(Particle<ParticleData> p);
 void CreateParticle(Particle<ParticleData>& p);
 void CreateFileParticle(Particle<ParticleData>& p);
@@ -40,4 +46,3 @@ void DrawFrameTime(bool is_displaying);
 void DrawColorDisplay(bool is_displaying);
 void DrawForegroundLog();
 void DrawBackgroundLog();
-
