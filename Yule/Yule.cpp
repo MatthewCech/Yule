@@ -1,9 +1,17 @@
+// General drawing stuff
 #include <iostream>
 #include <chrono>
 #include <thread>
-#include <vector>
 #include <fstream>
-#include <stack>
+
+// Recycle bin utilities
+#include <Windows.h>  // I mean, recycle bin is a fairly windows thing, so... yeah this is for all the caps stuff.
+#include <locale>     // std::wstring_convert.
+#include <codecvt>    // std::codecvt_utf8_utf16. c++2017 convert. Planned to be deprecated in c++26, apparently.
+#include <string>     // std::string, std::wstring.
+#include <iostream>   // std::cout.
+
+// Yule specific stuff
 #include "console-utils.hpp"
 #include "ParticleSystem.hpp"
 #include "Yule.hpp"
@@ -13,12 +21,24 @@
 int windowWidth;
 int windowHeight;
 long lastFrameMicroseconds = 1000; // Use a default value of 1 millisecond to have at least something there.
-bool displayFrameTime = false;
-bool displayColors = false;
+int numberBurned = 0;
 
-bool pendingScrapeData = false;
-char scraped[200];
-std::stack<char> pendingBurnStack;
+bool displayFrameTime = false; // Input tracking for frame time
+bool displayColors = false;    // Input tracking for color debug display
+bool displayBurnCount = true;  // Input tracking for default file burnt count display
+
+bool pendingScrapeData = false; // Scrape tracking: Basically, the file to 'burn'
+int scrapedLocation = 0;        // Scrape tracking: Stack of characters left to 'burn'
+char scraped[200];              // Scrape tracking: First N bytes of the file specified by size
+
+std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> wstringConverter; 
+
+void Clear()
+{
+  RConsole::Canvas::ReInit(windowWidth, windowHeight);
+  RConsole::Canvas::ForceClearEverything();
+  RConsole::Canvas::SetCursorVisible(false);
+}
 
 /// <summary>
 /// IT'S MAIN BAYBEEEEE
@@ -28,8 +48,8 @@ int main()
 {
   // Data config/setup
   ParticleData data = ParticleData();
-  ParticleSystem<ParticleData> particleSystem = ParticleSystem<ParticleData>(100, 0.015, true, data, CreateParticle, UpdateParticle);
-  ParticleSystem<ParticleData>* scrapeSys = nullptr;
+  ParticleSystem<ParticleData> flameParticles = ParticleSystem<ParticleData>(100, 0.015, true, data, CreateParticle, UpdateParticle);
+  ParticleSystem<ParticleData>* fileParticles = nullptr;
   InputParser parser = InputParser();
   
   // Console config/setup
@@ -37,7 +57,7 @@ int main()
   windowHeight = CONSOLE_HEIGHT;
   RConsole::Canvas::ReInit(windowWidth, windowHeight);
   RConsole::Canvas::SetCursorVisible(false);
-  RConsole::Canvas::FillCanvas();
+  Clear();
 
   while (true)
   {
@@ -49,29 +69,55 @@ int main()
 
     // Update
     parser.HandleInput(ProcessInputChar, ProcessInputString);
-    particleSystem.Update(lastFrameS);
+    flameParticles.Update(lastFrameS);
+    HandlePendingScrapedData(fileParticles, data, lastFrameS);
+    TryUpdate(fileParticles, lastFrameS);
     RConsole::Canvas::Update();
-    HandlePendingScrapedData(scrapeSys, data, lastFrameS);
-    TryUpdate(scrapeSys, lastFrameS);
 
     // Draw
     DrawBackgroundLog();
-    DrawParticles(particleSystem);
-    DrawParticles(scrapeSys);
+    DrawParticles(flameParticles);
+    DrawParticles(fileParticles);
     DrawForegroundLog();
     DrawFrameTime(displayFrameTime);
     DrawColorDisplay(displayColors);
+    DrawBurnCount(displayBurnCount);
 
-    // Resolve
+    // Resolve (Post-update)
     std::this_thread::yield(); // Be polite! 
     std::this_thread::sleep_until(start + std::chrono::milliseconds(4)); // Max speed of 
     Timepoint end = std::chrono::steady_clock::now();
     lastFrameMicroseconds = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
   }
 
-  delete scrapeSys;
+  delete fileParticles;
   return 0;
 }
+
+/// <summary>
+/// Attempts to silently send the specified file or folder at the path to the recycle bin
+/// </summary>
+/// <param name="path"></param>
+/// <returns>True if no issues, false if issues / could not delete.</returns>
+bool TryRecyclePath(std::string path)
+{
+  // Construct and pad path. An extra bit of null won't hurt anything.
+  const std::wstring end_coverage = std::wstring(1, L'\0');
+  std::wstring wide_path = wstringConverter.from_bytes(path) + end_coverage;
+
+  // Construct request
+  SHFILEOPSTRUCT fileOp;
+  fileOp.hwnd = NULL;
+  fileOp.wFunc = FO_DELETE;
+  fileOp.pFrom = wide_path.c_str();
+  fileOp.pTo = NULL;
+  fileOp.fFlags = FOF_ALLOWUNDO | FOF_NOERRORUI | FOF_NOCONFIRMATION | FOF_SILENT;
+
+  // Pass request and result
+  int result = SHFileOperation(&fileOp);
+  return result == 0;
+}
+
 
 /// <summary>
 /// Wrap to cover null system updates
@@ -111,24 +157,13 @@ void HandlePendingScrapedData(ParticleSystem<ParticleData>*& scrapeSys, Particle
 
   if (scrapeSys != nullptr)
   {
-    RConsole::Canvas::FillCanvas();
+    //Clear();
     delete scrapeSys;
   }
 
   scrapeSys = new ParticleSystem<ParticleData>(sizeof(scraped), 0.003, false, data, CreateFileParticle, UpdateParticle);
-  for (int i = 0; i < sizeof(scraped); ++i)
-  {
-    char entry = scraped[i];
 
-    // Prevent bell
-    if (entry == static_cast<unsigned char>(7))
-    {
-      entry = '?';
-    }
-
-    pendingBurnStack.push(entry);
-  }
-
+  scrapedLocation = 0;
   pendingScrapeData = false;
 }
 
@@ -228,22 +263,45 @@ void DrawColorDisplay(bool is_displaying)
 }
 
 /// <summary>
+/// Displays the number of files burned
+/// </summary>
+/// <param name="is_displaying"></param>
+void DrawBurnCount(bool is_displaying)
+{
+  if (numberBurned == 0)
+  {
+    return;
+  }
+
+  std::string pluralAppend = (numberBurned != 1 ? "s" : "");
+  std::string toDraw = std::to_string(numberBurned) + " file" + pluralAppend + " burned";
+  const int xPos = windowWidth / 2 - toDraw.length() / 2;
+  const int yPos = 1;
+
+  RConsole::Canvas::DrawString(toDraw, xPos, yPos, RConsole::Color::GREY);
+}
+
+/// <summary>
 /// Consumes extended input
 /// </summary>
 /// <param name="path"></param>
 void ProcessInputString(std::string path)
 {
-  if (path.length() > 2 && path[0] == '"' && path[path.length() - 1] == '"')
+  bool pathNeedsQuotesStripped = path.length() > 2 && path[0] == '"' && path[path.length() - 1] == '"';
+  if (pathNeedsQuotesStripped)
   {
     path = path.substr(1, path.length() - 2);
   }
   
   // Create our objects.
   std::ifstream fileObject(path, std::ios::binary);
- 
+  
   // See if we opened the file successfully.
   if (!fileObject.is_open())
   {
+    // We can safely assume it's closed
+    ++numberBurned;
+    TryRecyclePath(path); // Could still be a folder, so go for it anyways.
     return;
   }
 
@@ -251,6 +309,8 @@ void ProcessInputString(std::string path)
   pendingScrapeData = true;
 
   fileObject.close();
+  ++numberBurned;
+  TryRecyclePath(path);
 }
 
 /// <summary>
@@ -260,12 +320,14 @@ void ProcessInputChar(char key)
 {
   switch (key)
   {
+    case 'b':
+    case 'c':
+      displayBurnCount = !displayBurnCount;
+      break;
+
     case 'd':
     case 'f':
       displayFrameTime = !displayFrameTime;
-      break;
-
-    case 'c':
       displayColors = !displayColors;
       break;
   }
@@ -290,7 +352,6 @@ void ResizeIfNeeded()
   }
 }
 
-
 /// <summary>
 /// Passed as argument to allow creation of new particles to take custom parameters.
 /// </summary>
@@ -306,8 +367,6 @@ void CreateParticle(Particle<ParticleData>& p)
   p.Life = 2 - log10(rand0to30 + .001);
 
   p.Data.startLife = p.Life;
-
-  //p.Data.visual = static_cast<unsigned char>((rand() % (255 - 32)) + 32); // Random ascii that ISN'T 7! NO USING ASCII-7, THAT'S SYSTEM BEEP NOISE
 
   const unsigned char charset[]
   {
@@ -336,8 +395,20 @@ void CreateFileParticle(Particle<ParticleData>& p)
   p.Life = 2.5 - log10(rand0to30 + .001);
 
   p.Data.startLife = p.Life;
-  p.Data.visual = pendingBurnStack.top();
-  pendingBurnStack.pop();
+
+  if (scrapedLocation >= sizeof(scraped))
+  {
+    throw "Attempting to walk off the end of the scraped list. Not good.";
+  }
+
+  char toShow = scraped[scrapedLocation];
+  if (toShow == static_cast<unsigned char>(7))
+  {
+    toShow = '?';
+  }
+
+  p.Data.visual = toShow;
+  ++scrapedLocation;
 }
 
 /// <summary>

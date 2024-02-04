@@ -29,6 +29,9 @@ public:
 void ProcessInputChar(char key);
 void ProcessInputString(std::string path);
 void ResizeIfNeeded();
+void Clear();
+
+bool TryRecyclePath(std::string path);
 
 void TryUpdate(ParticleSystem<ParticleData>* particle_system, const double& dt);
 void TryUpdate(ParticleSystem<ParticleData>& particle_system, const double& dt);
@@ -44,5 +47,6 @@ void UpdateParticle(double dt, Particle<ParticleData>& p);
 
 void DrawFrameTime(bool is_displaying);
 void DrawColorDisplay(bool is_displaying);
+void DrawBurnCount(bool is_displaying);
 void DrawForegroundLog();
 void DrawBackgroundLog();
