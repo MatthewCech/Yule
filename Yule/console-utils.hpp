@@ -1009,6 +1009,8 @@ namespace RConsole
     static void FillCanvas(const RasterInfo &ri = RasterInfo(' ', WHITE));
     static void Draw(char toWrite, float x, float y, Color color = PREVIOUS_COLOR);
     static void Draw(char toWrite, int x, int y, Color color = PREVIOUS_COLOR);
+    static void DrawString(std::string toDraw, int xStart, int yStart, Color color = PREVIOUS_COLOR);
+    static void DrawString(std::string toDraw, float xStart, float yStart, Color color = PREVIOUS_COLOR);
 	  static void DrawString(const char* toDraw, float xStart, float yStart, Color color = PREVIOUS_COLOR);
     static void DrawString(const char* toDraw, int xStart, int yStart, Color color = PREVIOUS_COLOR);
     static void DrawAlpha(float x, float y, Color color, float opacity);
@@ -1259,10 +1261,23 @@ namespace RConsole
     Canvas::Draw(toWrite, static_cast<float>(x), static_cast<float>(y), color);
   }
 
+  // Draw a string based on ints via std::string
+  inline void Canvas::DrawString(std::string toDraw, int xStart, int yStart, Color color)
+  {
+    Canvas::DrawString(toDraw.c_str(), static_cast<float>(xStart), static_cast<float>(yStart), color);
+  }
+
   // Draw a string based on ints
   inline void Canvas::DrawString(const char* toDraw, int xStart, int yStart, Color color)
   {
     Canvas::DrawString(toDraw, static_cast<float>(xStart), static_cast<float>(yStart), color);
+  }
+
+
+  // Draw a string based on floats via std::string
+  inline void Canvas::DrawString(std::string toDraw, float xStart, float yStart, Color color)
+  {
+    Canvas::DrawString(toDraw.c_str(), xStart, yStart, color);
   }
 
   // Draw a string

@@ -4,7 +4,6 @@
 #include <iostream>
 #include "Particle.hpp"
 
-
 template <typename T> class ParticleSystem
 {
 public:
@@ -22,7 +21,7 @@ public:
     , maxParticles_(max)
     , maxLifeSeconds_(5)
     , spawnDelaySeconds_(spawn_delay_seconds)
-    , spawnCounter_(0)
+    , spawnCounter_(spawnDelaySeconds_)
     , oneshotCount_(0)
     , isLooping_(loops)
     , default_(def)
