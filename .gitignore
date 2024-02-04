@@ -31,6 +31,10 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+[Tt]emp/
+[Bb]uild/
+[Tt]emp_tools/
+[Tt]emp_build/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
